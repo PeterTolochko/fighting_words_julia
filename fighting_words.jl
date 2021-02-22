@@ -7,7 +7,7 @@ function preprocess_text(text)
 	return text
 end
 
-function fighting_words(text₁, text₂, prior=.01; preprocess=false)
+function fighting_words(text₁, text₂; prior=.01, preprocess=false, comparison=true)
 	"""Takes two arrays, each for a separate text category
 	Outputs Ζ̂ scores (logged odds with Dirichlet prior)"""
 	if preprocess
@@ -29,16 +29,17 @@ function fighting_words(text₁, text₂, prior=.01; preprocess=false)
 	update_lexicon!(crps)
 	update_inverse_index!(crps)
 
+	terms = m.terms
 
 	m = DocumentTermMatrix(crps, lexicon(crps))
 	my_dtm = dtm(m, :dense)
 
-	vocab_size = size(my_dtm)[2]
+	vocab_size = length(terms)
 
 	# If using flat priors
 	priors = [prior for i in 1:vocab_size]
 
-	z_scores = zeros(size(priors))
+	z_scores = zeros(vocab_size)
 
 	count_matrix = zeros(2, vocab_size)
 
@@ -47,30 +48,55 @@ function fighting_words(text₁, text₂, prior=.01; preprocess=false)
 
 	a₀ = sum(priors)
 
-	n₁ = sum(count_matrix[1, :])
-	n₂ = sum(count_matrix[2, :])
 
 	# for future
 	# count_matrix[1:end .!=1, i]
+	if comparison
+		println("\nComparing two types; Obtaining ΔΖ̂...\n") 
 
-	println("comparing...") 
-	for i ∈ 1:vocab_size
-
-		y_i = count_matrix[1, i]
-		y_j = count_matrix[2, i]
+		n₁ = sum(count_matrix[1, :])
+		n₂ = sum(count_matrix[2, :])
 
 
-		term₁ = log((y_i + priors[i]) / (n₁ + a₀ - y_i - priors[i]))
-		term₂ = log((y_j + priors[i]) / (n₂ + a₀ - y_j - priors[i]))
+		for i ∈ 1:vocab_size
 
-		δ̂ = term₁ - term₂
+			y_i = count_matrix[1, i]
+			y_j = count_matrix[2, i]
 
-		# compute variance
-		σ² = 1 / (y_i + priors[i]) + 1 / (y_j + priors[i])
+			term₁ = log((y_i + priors[i]) / (n₁ + a₀ - y_i - priors[i]))
+			term₂ = log((y_j + priors[i]) / (n₂ + a₀ - y_j - priors[i]))
 
-		z_scores[i] = δ̂ / sqrt(σ²)
+			δ̂ = term₁ - term₂
+
+			# compute variance
+			σ² = 1 / (y_i + priors[i]) + 1 / (y_j + priors[i])
+
+			z_scores[i] = δ̂ / sqrt(σ²)
+		end
+	else
+		println("\nObtaining Ζ̂...\n")
+
+		n₁ = sum(count_matrix[1, :])
+		n₀ = sum(count_matrix, dims=(1, 2))[1] # total words in the sample
+
+
+		for i ∈ 1:vocab_size
+
+			y_i = count_matrix[1, i]
+			y_j = y_i + count_matrix[2, i]
+
+			term₁ = log((y_i + priors[i]) / (n₁ + a₀ - y_i - priors[i]))
+			term₂ = log((y_j + priors[i]) / (n₀ + a₀ - y_j - priors[i]))
+
+			δ̂ = term₁ - term₂
+
+			# compute variance
+			σ² = 1 / (y_i + priors[i]) + 1 / (y_j + priors[i])
+
+			z_scores[i] = δ̂ / sqrt(σ²)
+
+		end
 	end
-
 	terms = m.terms
 	sorted_indices = sortperm(z_scores)
 
@@ -82,3 +108,6 @@ function fighting_words(text₁, text₂, prior=.01; preprocess=false)
 	return return_list
 
 end
+
+
+fighting_words(output_array_1, output_array_2, prior=0.1, comparison=false)
